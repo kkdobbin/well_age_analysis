@@ -16,10 +16,11 @@ Fiftytwo <- na.omit(Fiftytwo)
 
 #make DV for change in percent impacted 
 
-Fiftytwo$change.impacted.1994.1952 <- (Fiftytwo$perc_impacted_1952- Fiftytwo$perc_impacted_1994)
+Fiftytwo$change.impacted.1994.1952 <- (Fiftytwo$perc_impacted_1952- Fiftytwo$perc_impacted_1994)*100
 summary(Fiftytwo$change.impacted.1994.1952)
   
-Fiftytwo$change.fullydew.1994.1952 <- (Fiftytwo$perc_fullydew_1952 - Fiftytwo$perc_fullydew_1994)
+Fiftytwo$change.fullydew.1994.1952 <- (Fiftytwo$perc_fullydew_1952 - Fiftytwo$perc_fullydew_1994)*100
+summary(Fiftytwo$change.fullydew.1994.1952)
 
 
 #add census
@@ -84,7 +85,7 @@ ed_sum <- ed_sum[,-c(2:6,8)]
 Fiftytwo <- left_join(Fiftytwo, ed_sum, by = c("GEOID20" = "GEOID"))
 
 
-#assess multicolinearity
+#assess collinearity
 Vars <- Fiftytwo[,c(9, 22:27, 29, 31)]
 Vars <- na.omit(Vars)
 Varscor <- cor(x = Vars)
@@ -141,15 +142,66 @@ summary(Pair5)
 Pair6 <- lm(Fiftytwo$change.fullydew.1994.1952 ~ Fiftytwo$pct_no_hs)
 summary(Pair6)
 
+#Try two approaches to dealing with multicollinearity - https://docsdrive.com/pdfs/medwelljournals/jeasci/2020/2693-2703.pdf
+
+#Principal Component Regression 
+library(pls)
+set.seed(1990)
+PCRmodel <- pcr(change.impacted.1994.1952~  Median.hh.income + pct.hispanicorlatino + pct.blackalone + pct.asianalone + pct.renter + pct_no_hs, data = Fiftytwo, scale = TRUE, validation = "CV")
+summary(PCRmodel)
+validationplot(PCRmodel)
+validationplot(PCRmodel, val.type="MSEP")
+validationplot(PCRmodel, val.type="R2")
+coefplot(PCRmodel)
+
+#PRC resoruces: https://www.statology.org/principal-components-regression-in-r/, https://scientistcafe.com/ids/principal-component-regression-and-partial-least-square MAYBE switch to Partial least squares?
+
+#Partial least squares regression: https://www.statology.org/partial-least-squares-in-r/
+set.seed(1990)
+PLSmodel <- plsr(change.impacted.1994.1952~  Median.hh.income + pct.hispanicorlatino + pct.blackalone + pct.asianalone + pct.renter + pct_no_hs, data = Fiftytwo, scale = TRUE, validation = "CV")
+summary(PLSmodel)
+
+validationplot(PLSmodel)
+validationplot(PLSmodel, val.type="MSEP")
+validationplot(PLSmodel, val.type="R2")
+#use three components
 
 
+#use model to make predictions on a test set
+model <- plsr(change.impacted.1994.1952~  Median.hh.income + pct.hispanicorlatino + pct.blackalone + pct.asianalone + pct.renter + pct_no_hs, data = Fiftytwo, scale = TRUE, validation = "CV")
+pcr_pred <- predict(model, Fiftytwo, ncomp=3)
+Test <- as.data.frame(pcr_pred)
+Test <- Test %>% 
+  rename(Pred = `change.impacted.1994.1952.3 comps`)
+Test$Real <- Fiftytwo$change.impacted.1994.1952
+Test <- na.omit(Test)
 
+#calculate RMSE
+sqrt(mean((Test$Pred - Test$Real)^2))
+
+#Stepwise regression
+library(MASS)
+
+Fiftytwo_naomit <- na.omit(Fiftytwo)
+
+# Fit the simple model
+LmModel <- lm(change.impacted.1994.1952~  Median.hh.income + pct.hispanicorlatino + pct.blackalone + pct.asianalone + pct.renter + pct_no_hs, data = Fiftytwo_naomit)
+# Stepwise regression model
+step.model <- stepAIC(LmModel, direction = "both", 
+                      trace = FALSE)
+summary(step.model)
+
+#stepwise regression for fully dewatered
+LmModel2 <- lm(change.fullydew.1994.1952 ~  Median.hh.income + pct.hispanicorlatino + pct.blackalone + pct.asianalone + pct.renter + pct_no_hs, data = Fiftytwo_naomit)
+step.model2 <- stepAIC(LmModel2, direction = "both", 
+                      trace = FALSE)
+summary(step.model2)
 
 #Next steps
 ##Think about the DV. is there a better way. What about relative change? 
 ##think if there needs to be any controls
 ##think about implications of removing NAs. 
-##pairwise regression with all the SES variables? 
+##Stepwise regression with all the SES variables OR Principal component regression? 
 #what descriptive stats can go along with this analysis? 
 #what figures? maybe map of change or relative change (Darcy?) like the EJ tree canopy paper has
 #do same analysis for a more moderate retirement age assumption? 
